@@ -36,11 +36,11 @@ jobs:
           az login --service-principal -u $ARM_CLIENT_ID -t $ARM_TENANT_ID -p "$ARM_CLIENT_SECRET"
           az account set --subscription $ARM_SUBSCRIPTION_ID
           az acr login --name devopstoolchainacr
-          
+
           CONTAINER_REGISTRY="devopstoolchainacr.azurecr.io"
           VERSION="prod-0.0.${{ github.run_id }}"
           IMAGE="nt-app/saft-laden"
-          
+
           docker build . \
             --tag "${CONTAINER_REGISTRY}/${IMAGE}:${VERSION}" \
             --tag "${CONTAINER_REGISTRY}/${IMAGE}:latest"
@@ -82,9 +82,8 @@ jobs:
 
       - name: "Deploy"
         run: |
-            helm repo add multi-juicer https://iteratec.github.io/multi-juicer --force-update
-            helm upgrade
-              --install multi-juicer multi-juicer/multi-juicer
-              --values helm/multi-juicer.yaml
-              --set juiceShop.image="devopstoolchainacr.azurecr.io/nt-app/saft-laden"
+            helm upgrade \
+              --install multi-juicer oci://ghcr.io/juice-shop/multi-juicer/helm/multi-juicer \
+              --values helm/multi-juicer.yaml \
+              --set juiceShop.image="devopstoolchainacr.azurecr.io/nt-app/saft-laden" \
               --set juiceShop.tag="prod-0.0.${{ github.run_id }}"
