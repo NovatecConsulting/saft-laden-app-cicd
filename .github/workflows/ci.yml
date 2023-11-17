@@ -1,57 +1,87 @@
 name: "CI/CD Pipeline"
 on:
-    push:
-    pull_request:
-    workflow_dispatch:
+  push:
+  pull_request:
+  workflow_dispatch:
 env:
-    ANGULAR_CLI_VERSION: 13
+  ANGULAR_CLI_VERSION: 13
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-        - name: "Check out Git repository"
-          uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f #v2: v2.3.4 available
-        - name: "Use Node.js 18"
-          uses: actions/setup-node@f1f314fca9dfce2769ece7d933488f076716723e #v1: v2.x available
-          with:
-            node-version: 18
-        - name: "Install CLI tools"
-          run: npm install -g @angular/cli@$ANGULAR_CLI_VERSION
-        - name: "Install application minimalistically"
-          run: |
-            npm install --ignore-scripts
-            cd frontend
-            npm install --ignore-scripts --legacy-peer-deps
+      - uses: actions/checkout@v4
+
+      - name: "Use Node.js 18"
+        uses: actions/setup-node@f1f314fca9dfce2769ece7d933488f076716723e #v1: v2.x available
+        with:
+          node-version: 18
+
+      - name: "Install CLI tools"
+        run: npm install -g @angular/cli@$ANGULAR_CLI_VERSION
+
+      - name: "Install application minimalistically"
+        run: |
+          npm install --ignore-scripts
+          cd frontend
+          npm install --ignore-scripts --legacy-peer-deps
+
   docker:
     runs-on: ubuntu-latest
     steps:
-        - name: "Check out Git repository"
-          uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f #v2: v2.3.4 available
-        - name: "Build and push docker image"
-          run: |
-            set -e
-            az login --service-principal -u $ARM_CLIENT_ID -t $ARM_TENANT_ID -p "$ARM_CLIENT_SECRET"
-            az account set --subscription $ARM_SUBSCRIPTION_ID
-            az acr login --name devopstoolchainacr
-  
-            CONTAINER_REGISTRY="devopstoolchainacr.azurecr.io"
-            VERSION="prod-0.0.${{ github.run_id }}"
-            IMAGE="nt-app/saft-laden"
-  
-            docker build . \
-              --tag "${CONTAINER_REGISTRY}/${IMAGE}:${VERSION}" \
-              --tag "${CONTAINER_REGISTRY}/${IMAGE}:latest"
-          env:
-            ARM_TENANT_ID: ${{secrets.ARM_TENANT_ID}}
-            ARM_SUBSCRIPTION_ID: ${{secrets.ARM_SUBSCRIPTION_ID}}
-            ARM_CLIENT_ID: ${{secrets.ARM_CLIENT_ID}}
-            ARM_CLIENT_SECRET: ${{secrets.ARM_CLIENT_SECRET}}
-        - if: ${{ github.ref_name == 'main' }}
-          name: Push docker image
-          run: |
-              set -e
-              CONTAINER_REGISTRY="devopstoolchainacr.azurecr.io"
-              VERSION="prod-0.0.${{ github.run_id }}"
-              IMAGE="nt-app/saft-laden"
-              docker push "${CONTAINER_REGISTRY}/${IMAGE}:${VERSION}"
-              docker push "${CONTAINER_REGISTRY}/${IMAGE}:latest"
+      - uses: actions/checkout@v4
+
+      - name: "Build and push docker image"
+        run: |
+          set -e
+          az login --service-principal -u $ARM_CLIENT_ID -t $ARM_TENANT_ID -p "$ARM_CLIENT_SECRET"
+          az account set --subscription $ARM_SUBSCRIPTION_ID
+          az acr login --name devopstoolchainacr
+          
+          CONTAINER_REGISTRY="devopstoolchainacr.azurecr.io"
+          VERSION="prod-0.0.${{ github.run_id }}"
+          IMAGE="nt-app/saft-laden"
+          
+          docker build . \
+            --tag "${CONTAINER_REGISTRY}/${IMAGE}:${VERSION}" \
+            --tag "${CONTAINER_REGISTRY}/${IMAGE}:latest"
+        env:
+          ARM_TENANT_ID: ${{secrets.ARM_TENANT_ID}}
+          ARM_SUBSCRIPTION_ID: ${{secrets.ARM_SUBSCRIPTION_ID}}
+          ARM_CLIENT_ID: ${{secrets.ARM_CLIENT_ID}}
+          ARM_CLIENT_SECRET: ${{secrets.ARM_CLIENT_SECRET}}
+
+      - if: ${{ github.ref_name == 'main' }}
+        name: Push docker image
+        run: |
+          set -e
+          CONTAINER_REGISTRY="devopstoolchainacr.azurecr.io"
+          VERSION="prod-0.0.${{ github.run_id }}"
+          IMAGE="nt-app/saft-laden"
+          docker push "${CONTAINER_REGISTRY}/${IMAGE}:${VERSION}"
+          docker push "${CONTAINER_REGISTRY}/${IMAGE}:latest"
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Get Kubeconfig"
+        run: |
+          set -e
+          az login --service-principal -u $ARM_CLIENT_ID -t $ARM_TENANT_ID -p "$ARM_CLIENT_SECRET"
+          az account set --subscription $ARM_SUBSCRIPTION_ID
+          az aks get-credentials --resource-group dot-aks-prod --name dot-aks-prod --admin
+        env:
+          ARM_TENANT_ID: ${{secrets.ARM_TENANT_ID}}
+          ARM_SUBSCRIPTION_ID: ${{secrets.ARM_SUBSCRIPTION_ID}}
+          ARM_CLIENT_ID: ${{secrets.ARM_CLIENT_ID}}
+          ARM_CLIENT_SECRET: ${{secrets.ARM_CLIENT_SECRET}}
+
+      - name: "Deploy"
+        run: |
+            helm repo add multi-juicer https://iteratec.github.io/multi-juicer --force-update
+            helm upgrade
+              --install multi-juicer multi-juicer/multi-juicer
+              --values helm/multi-juicer.yaml
+              --set juiceShop.image="devopstoolchainacr.azurecr.io/nt-app/saft-laden"
+              --set juiceShop.tag="prod-0.0.${{ github.run_id }}"

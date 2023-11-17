@@ -1,0 +1,34 @@
+# https://github.com/iteratec/multi-juicer/blob/master/helm/multi-juicer/values.yaml
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: "dot-aks-prod.westeurope.cloudapp.azure.com"
+      paths:
+        path: "/"
+  tls:
+    - secretName: dot-aks-prod-tls
+      hosts:
+        - dot-aks-prod.westeurope.cloudapp.azure.com
+
+balancer:
+  # Changing adminPassword does not work in current helm chart version, we have to use the random password
+  #adminPassword: "saftladen"
+  cookieParserSecret: "saftladen"
+  cookie:
+    secure: false
+    # Documentation is wrong, cookieParserSecret is one level up, on level balancer
+    #cookieParserSecret: "saftladen"
+  replicas: 2
+  metrics:
+    enabled: false
+
+juiceShop:
+  image: bkimminich/juice-shop
+  tag: v15.3.0
+  maxInstances: 2
+
+juiceShopCleanup:
+  gracePeriod: 1d
